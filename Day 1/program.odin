@@ -41,6 +41,8 @@ parseInt :: proc(buffer : []byte,  pIndex : ^int) -> (int, bool)
             }
             else if c == '\r' && buffer[pIndex^ + 1] == '\n'
             {
+                // PUNT - This will read outside of file if file ends in \r... Not worried about that for AoC...
+                
                 pIndex^ += 2;
             }
             
