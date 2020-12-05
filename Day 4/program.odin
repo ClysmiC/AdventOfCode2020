@@ -256,7 +256,7 @@ processNextPassport :: proc(scanner : ^scannerPkg.Scanner) -> (meetsPart1Criteri
             next(scanner); // Consume second \n, no-op if EOF
             
             // Check validity
-            // NOTE - Cid is optional
+            // NOTE - Cid is optional/ignored
 
             meetsPart1Criteria = isByrPresent &&
                 isIyrPresent &&
