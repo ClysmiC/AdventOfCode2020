@@ -1,0 +1,35 @@
+// Internal compiler error?
+
+buildBagContentList :: proc(scanner : ^scannerPkg.Scanner) -> BagContentList
+{
+    result : BagContentList;
+
+    for !isEof(scanner)
+    {
+        added := false;
+        
+        if key, ok := tryConsumeBagType(scanner); ok
+        {
+            if ok := tryConsume(scanner, "contain "); ok
+            {
+                for typeAndQuantity, ok := tryConsumeBagTypeAndQuantity(scanner); ok;
+                {
+                    if !(key in result.list)
+                    {
+                        result.list[key] = make(BagContents);
+                    }
+
+                    (&result.list[key])[typeAndQuantity.type] = typeAndQuantity.quantity;
+                    
+                    /* contentsMap : ^BagContents = &result.list[key]; */
+                    /* contentsMap[typeAndQuantity.type] = typeAndQuantity.quantity; */
+                    added = true;
+                }
+            }
+        }
+
+        assert(added);
+    }
+    
+    return result;
+}
