@@ -255,8 +255,6 @@ containsShinyGold :: proc(
     outermostType : BagType)
     -> bool
 {
-    test := outermostType;
-
     // HMM - This is kind of funky, but the problem seems to say that a shiny gold bag itself doesn't qualify
     // @Slow - We are checking this outside of the recursion too
     
@@ -312,7 +310,6 @@ main :: proc()
     part1Result : int;
     for outermostType in bagList
     {
-        test := outermostType;
         if containsShinyGold(&bagList, &cachedResults, outermostType)
         {
             part1Result += 1;
