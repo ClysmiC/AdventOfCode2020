@@ -231,8 +231,7 @@ executeProgram :: proc(using program : ^ProgramState) -> ExitCode
 
             return .Ok;
         }
-        
-        if hasInstructionExecuted[ip]
+        else if hasInstructionExecuted[ip]
         {
             return .Error_InfiniteLoop;
         }
@@ -264,7 +263,6 @@ executeProgram :: proc(using program : ^ProgramState) -> ExitCode
 
             case:
             {
-                fmt.println("Unknown op:", op);
                 return .Error_UnknownInstruction;
             }
         }
@@ -296,7 +294,7 @@ main :: proc()
     {
         originalOp := program.instructions[iOp].op;
 
-        // Mutate program
+        // Mutate instruction
         
         if originalOp == .nop
         {
@@ -311,7 +309,7 @@ main :: proc()
             continue;
         }
 
-        // Reset program
+        // Reset program state
 
         program.acc = 0;
         program.ip = 0;
