@@ -3,7 +3,6 @@ package main
 import "core:fmt"
 import "core:strconv"
 import scannerPkg "core:text/scanner"
-import "core:strings"
 
 //
 // Scanning / util
