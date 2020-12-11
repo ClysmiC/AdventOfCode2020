@@ -216,8 +216,7 @@ main :: proc()
 
     // Part 1
     for !simulate(grid1, .Part1)
-    {
-    }
+    { ; }
     
     part1Occupied : int;
     for tile in grid1.tiles
@@ -232,8 +231,7 @@ main :: proc()
 
     // Part 2
     for !simulate(grid2, .Part2)
-    {
-    }
+    { ; }
     
     part2Occupied : int;
     for tile in grid2.tiles
