@@ -23,14 +23,14 @@ Waypoint :: struct
     dX, dY : int,
 }
 
-rotate90DegRight :: proc(x : int, y : int) -> (xOut : int, yOut : int)
+rotate90DegCw :: proc(x : int, y : int) -> (xOut : int, yOut : int)
 {
     xOut = y;
     yOut = -x;
     return;
 }
 
-rotate90DegLeft :: proc(x : int, y : int) -> (xOut : int, yOut : int)
+rotate90DegCcw :: proc(x : int, y : int) -> (xOut : int, yOut : int)
 {
     xOut = -y;
     yOut = x;
@@ -52,6 +52,7 @@ main :: proc()
             dY = 1
         };
 
+        // @Slow - Scanning twice
         resetScanner(&scanner);
         
         for !isEof(&scanner)
@@ -151,7 +152,7 @@ main :: proc()
                         assert(part == 2);
                         for i in 0..<abs(dHeading)
                         {
-                            waypoint.dX, waypoint.dY = rotate90DegLeft(waypoint.dX, waypoint.dY);
+                            waypoint.dX, waypoint.dY = rotate90DegCcw(waypoint.dX, waypoint.dY);
                         }
                     }
                 }
@@ -174,7 +175,7 @@ main :: proc()
                         assert(part == 2);
                         for i in 0..<dHeading
                         {
-                            waypoint.dX, waypoint.dY = rotate90DegRight(waypoint.dX, waypoint.dY);
+                            waypoint.dX, waypoint.dY = rotate90DegCw(waypoint.dX, waypoint.dY);
                         }
                     }
                 }
