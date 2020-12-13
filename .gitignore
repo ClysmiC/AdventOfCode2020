@@ -1,5 +1,6 @@
 *.bat
 *.exe
 .vs/
+_Template/
 *.pdb
 input.txt
