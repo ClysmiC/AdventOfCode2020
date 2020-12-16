@@ -19,8 +19,8 @@ consumeUntilCharSet_ :: proc(scanner : ^scannerPkg.Scanner, untilSet : []rune) -
     
     for
     {
-        char : rune = peek(scanner);
-        if char == EOF
+        c : rune = peek(scanner);
+        if c == EOF
         {
             break;
         }
@@ -28,7 +28,7 @@ consumeUntilCharSet_ :: proc(scanner : ^scannerPkg.Scanner, untilSet : []rune) -
         delimiterFound := false;
         for delimiter in untilSet
         {
-            if char == delimiter
+            if c == delimiter
             {
                 delimiterFound = true;
                 break;
@@ -61,9 +61,10 @@ tryConsume :: proc(scanner : ^scannerPkg.Scanner, match : string) -> bool
 
     saved : Scanner = scanner^;
 
-    for char in match
+    for c in match
     {
-        if next(scanner) != char
+        nextChar := next(scanner);
+        if nextChar != c
         {
             scanner^ = saved;
             return false;
@@ -92,6 +93,43 @@ makeIntArray :: proc(scanner : ^scannerPkg.Scanner) -> [dynamic]int
     return result;
 }
 
+consumeThrough :: proc(scanner : ^scannerPkg.Scanner, throughSet : []rune) -> string
+{
+    using scannerPkg;
+    
+    start : int = position(scanner).offset;
+    len : int;
+    
+    for
+    {
+        char_ : rune = peek(scanner);
+        if char_ == EOF
+        {
+            break;
+        }
+
+        matchFound := false;
+        for match in throughSet
+        {
+            if char_ == match
+            {
+                matchFound = true;
+                break;
+            }
+        }
+
+        if !matchFound
+        {
+            break;
+        }
+
+        next(scanner);
+        len += 1;
+    }
+
+    return scanner.src[start : start + len];
+}
+
 tryConsumeInt :: proc(scanner : ^scannerPkg.Scanner) -> (int, bool)
 {
     using scannerPkg;
@@ -99,10 +137,29 @@ tryConsumeInt :: proc(scanner : ^scannerPkg.Scanner) -> (int, bool)
 
     saved : Scanner = scanner^;
 
-    consumeWhitespace(scanner);
-    valueStr := consumeUntilWhitespace(scanner);
+    consumeWhitespace(scanner); // @Hack
+    valueStr := consumeThrough(scanner, []rune{'-', '+', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9' }); // @Hack
 
     if value, ok := parse_int(valueStr); ok
+    {
+        return value, true;
+    }
+
+    scanner^ = saved;
+    return ---, false;
+}
+
+tryConsumeInt64 :: proc(scanner : ^scannerPkg.Scanner) -> (i64, bool)
+{
+    using scannerPkg;
+    using strconv;
+
+    saved : Scanner = scanner^;
+
+    consumeWhitespace(scanner); // @Hack
+    valueStr := consumeThrough(scanner, []rune{'-', '+', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9' }); // @Hack
+
+    if value, ok := parse_i64(valueStr); ok
     {
         return value, true;
     }
