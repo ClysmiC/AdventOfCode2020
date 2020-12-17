@@ -131,7 +131,15 @@ main :: proc()
                                     {
                                         for dZNeighbor in -1..1
                                         {
-                                            for dWNeighbor in -1..1
+                                            dwNeighborMin := 0;
+                                            dwNeighborMax := 0;
+                                            if part == 2
+                                            {
+                                                dwNeighborMin = -1;
+                                                dwNeighborMax = 1;
+                                            }
+                                            
+                                            for dWNeighbor in dwNeighborMin..dwNeighborMax
                                             {
                                                 neighbor := Coord{
                                                     coordNext.x + dXNeighbor,
