@@ -172,7 +172,7 @@ main :: proc()
             }
             
             // Cull non-active cells to keep the simulation as tight as possible
-            cube^ = filterAndCloneMap(cubeNext, proc(b : bool) -> bool { return b; });
+            cube^ = filterAndCloneMap(cubeNext, inline proc(b : bool) -> bool { return b; });
         }
         
         fmt.println("Part", part, ":", len(cube));
