@@ -102,15 +102,15 @@ main :: proc()
                     {
                         for dZ in -1..1
                         {
-                            dwMin := 0;
-                            dwMax := 0;
+                            dWMin := 0;
+                            dWMax := 0;
                             if part == 2
                             {
-                                dwMin = -1;
-                                dwMax = 1;
+                                dWMin = -1;
+                                dWMax = 1;
                             }
                             
-                            for dW in dwMin..dwMax
+                            for dW in dWMin..dWMax
                             {
                                 coordNext := Coord{
                                     coord.x + dX,
@@ -131,15 +131,15 @@ main :: proc()
                                     {
                                         for dZNeighbor in -1..1
                                         {
-                                            dwNeighborMin := 0;
-                                            dwNeighborMax := 0;
+                                            dWNeighborMin := 0;
+                                            dWNeighborMax := 0;
                                             if part == 2
                                             {
-                                                dwNeighborMin = -1;
-                                                dwNeighborMax = 1;
+                                                dWNeighborMin = -1;
+                                                dWNeighborMax = 1;
                                             }
                                             
-                                            for dWNeighbor in dwNeighborMin..dwNeighborMax
+                                            for dWNeighbor in dWNeighborMin..dWNeighborMax
                                             {
                                                 neighbor := Coord{
                                                     coordNext.x + dXNeighbor,
