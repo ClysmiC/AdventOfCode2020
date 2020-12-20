@@ -107,8 +107,8 @@ ensure :: proc(array: ^[dynamic]$T, index: int, item: T)
 
 main :: proc()
 {
-    scanner : scan.Scanner;
-    scan.init(&scanner, string(#load("input.txt")));
+    scanner1 : scan.Scanner;
+    scan.init(&scanner1, string(#load("input.txt")));
 
     rules : [dynamic]Rule;
 
@@ -117,10 +117,10 @@ main :: proc()
     LRule:
     for // each rule
     {
-        index, ok := tryConsumeInt(&scanner);
+        index, ok := tryConsumeInt(&scanner1);
         assert(ok);
         
-        ok = tryConsume(&scanner, ": ");
+        ok = tryConsume(&scanner1, ": ");
         assert(ok);
 
         rule : Rule;
@@ -135,25 +135,25 @@ main :: proc()
             LPrimitive:
             for // each primitive
             {
-                if scan.peek(&scanner) == '"'
+                if scan.peek(&scanner1) == '"'
                 {
-                    scan.next(&scanner);
-                    c := scan.next(&scanner);
-                    closeQuote := scan.next(&scanner);
+                    scan.next(&scanner1);
+                    c := scan.next(&scanner1);
+                    closeQuote := scan.next(&scanner1);
                     assert(closeQuote == '"');
 
                     append(&sequence, c);
                 }
                 else
                 {
-                    iRule, ok := tryConsumeInt(&scanner);
+                    iRule, ok := tryConsumeInt(&scanner1);
                     assert(ok);
 
                     append(&sequence, iRule);
                 }
 
-                isEol = !tryConsume(&scanner, " ");
-                if isEol || tryConsume(&scanner, "| ")
+                isEol = !tryConsume(&scanner1, " ");
+                if isEol || tryConsume(&scanner1, "| ")
                 {
                     break LPrimitive;
                 }
@@ -163,7 +163,7 @@ main :: proc()
 
             if isEol
             {
-                eol := tryConsume(&scanner, "\r\n");
+                eol := tryConsume(&scanner1, "\r\n");
                 assert(eol);
                 break LSequence;
             }
@@ -171,7 +171,7 @@ main :: proc()
 
         ensure(&rules, index, rule);
         
-        if tryConsume(&scanner, "\r\n")
+        if tryConsume(&scanner1, "\r\n")
         {
             break LRule;
         }
@@ -180,15 +180,17 @@ main :: proc()
     //
     // Match values to rules
 
-    scanPart2 := scanner; // Save scanner state so part 2 can re-scan from the middle of the file
+    scanner2 := scanner1; // Save scanner state so part 2 can re-scan from the middle of the file
 
     // Part 1
     
+    scanner := &scanner1;
+    
     part1Result := 0;
-    for !isEof(&scanner)
+    for !isEof(scanner)
     {
-        str := consumeUntil(&scanner, []rune{'\r', '\n'});
-        consumeWhitespace(&scanner);
+        str := consumeUntil(scanner, []rune{'\r', '\n'});
+        consumeWhitespace(scanner);
 
         if isMatch(str, 0, rules[:])
         {
@@ -199,6 +201,11 @@ main :: proc()
     fmt.println("Part 1: ", part1Result);
 
     // Part 2
+
+    scanner = &scanner2;
+
+    // TODO - Step through part 2 with debugger to see what is going wrong
+    //  with loopy rules!
     
     rules[8] = [dynamic]RuleSequence{
         { int(42) },
@@ -211,10 +218,10 @@ main :: proc()
     };
 
     part2Result := 0;
-    for !isEof(&scanner)
+    for !isEof(scanner)
     {
-        str := consumeUntil(&scanner, []rune{'\r', '\n'});
-        consumeWhitespace(&scanner);
+        str := consumeUntil(scanner, []rune{'\r', '\n'});
+        consumeWhitespace(scanner);
 
         if isMatch(str, 0, rules[:])
         {
