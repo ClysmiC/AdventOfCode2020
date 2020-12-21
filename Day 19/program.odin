@@ -17,11 +17,20 @@ Rule :: [dynamic]RuleSequence;
 
 isMatch :: inline proc(str: string, iRule: int, rules: []Rule) -> bool
 {
-    prefixLen := computeFullMatchPrefixLengthForRule(str, iRule, rules);
+    iRuleParents : [dynamic]int;
+    defer delete(iRuleParents);
+    
+    prefixLen := computeFullMatchPrefixLengthForRule(str, iRule, &iRuleParents, rules);
     return prefixLen == len(str);
 
-    // ---
-    computeFullMatchPrefixLengthForRule :: proc(str: string, iRule: int, rules: []Rule) -> int
+    // ---Proceduceres---
+    
+    computeFullMatchPrefixLengthForRule :: proc(
+        str: string,
+        iRule: int,
+        iRuleParents: ^[dynamic]int, // Note - Should not include iRule
+        rules: []Rule)
+        -> int
     {
         if len(str) == 0
         {
@@ -32,25 +41,45 @@ isMatch :: inline proc(str: string, iRule: int, rules: []Rule) -> bool
         assert(iRule < len(rules));
 
         rule := rules[iRule];
+        append(iRuleParents, iRule);
         
+        result := 0;
         for sequence in rule
         {
-            if prefixLen := computeFullMatchPrefixLengthForRuleSequence(str, sequence, rules)
-            ;  prefixLen > 0
+            prefixLen := computeFullMatchPrefixLengthForRuleSequence(str, iRuleParents, sequence, rules);
+            result = max(result, prefixLen);
+            
+            if result == len(str)
             {
-                return prefixLen;
+                break;
             }
         }
 
-        return 0;
+        pop(iRuleParents);
 
-        // ---
-        computeFullMatchPrefixLengthForRuleSequence :: proc(str: string, sequence: RuleSequence, rules: []Rule) -> int
+        return result;
+
+        // ---Procedures---
+        
+        computeFullMatchPrefixLengthForRuleSequence :: proc(
+            str: string,
+            stackIRule: ^[dynamic]int, // Note - Top of stack is the rule we are computing prefix length for
+            sequence: RuleSequence,    // Note - This should correspond to one of the sequences in the rule on top of the stack
+            rules: []Rule) -> int
         {
             strCursor := str;
+
+            // @HACK Only works with 0 or 1 self-or-parent-loops per sequence. 
+            // The idea is to work forwards until hitting a loop. Then work bacwards
+            //  from the back. Then, you know how much the loop needs to "inflate" to
             
-            result := 0;
-            for primitive in sequence
+            prefixLen := 0;
+            iPrimitiveLoop := -1;
+
+            // Work forward
+
+            LForward:
+            for primitive, iPrimitive in sequence
             {
                 switch primitive in primitive
                 {
@@ -58,7 +87,7 @@ isMatch :: inline proc(str: string, iRule: int, rules: []Rule) -> bool
                     {
                         if len(strCursor) > 0 && (strCursor[0] == auto_cast primitive)
                         {
-                            result += 1;
+                            prefixLen += 1;
                             strCursor = strCursor[1 : ];
                         }
                         else
@@ -69,12 +98,21 @@ isMatch :: inline proc(str: string, iRule: int, rules: []Rule) -> bool
 
                     case int:
                     {
-                        prefixLen := computeFullMatchPrefixLengthForRule(strCursor, primitive, rules);
-
-                        if prefixLen > 0
+                        for iRuleFromStack in stackIRule
                         {
-                            result += prefixLen;
-                            strCursor = strCursor[prefixLen : ];
+                            if primitive == iRuleFromStack
+                            {
+                                iPrimitiveLoop = iPrimitive;
+                                break LForward;
+                            }
+                        }
+
+                        matchPrefixLen := computeFullMatchPrefixLengthForRule(strCursor, primitive, stackIRule, rules);
+
+                        if matchPrefixLen > 0
+                        {
+                            prefixLen += matchPrefixLen;
+                            strCursor = strCursor[matchPrefixLen : ];
                         }
                         else
                         {
@@ -82,15 +120,288 @@ isMatch :: inline proc(str: string, iRule: int, rules: []Rule) -> bool
                         }
                     }
 
-                    case:
-                    {
-                        assert(false);
-                        return 0;
-                    }
+                    case: assert(false);
                 }
             }
+            
+            if iPrimitiveLoop == -1
+            {
+                // We didn't stop at a loop
 
-            return result;
+                return prefixLen;
+            }
+
+            // We stopped at a loop, so work backwards
+            // TODO - Need to work backwards starting from the root parent rule... ughhhh this bookkeeping is getting gross
+
+            suffixLen := 0;
+
+            for iPrimitive := len(sequence) - 1; iPrimitive > iPrimitiveLoop; iPrimitive -= 1
+            {
+                primitive := sequence[iPrimitive];
+
+                switch primitive in primitive
+                {
+                    case rune:
+                    {
+                        if len(strCursor) > 0 && (strCursor[len(strCursor) - 1] == auto_cast primitive)
+                        {
+                            suffixLen += 1;
+                            strCursor = strCursor[ : len(strCursor) - 1];
+                        }
+                        else
+                        {
+                            return 0;
+                        }
+                    }
+
+                    case int:
+                    {
+                        for iRuleFromStack in stackIRule
+                        {
+                            // If this triggers, it means there were multiple rule loops in a sequence, which we don't support!
+                            assert(primitive != iRuleFromStack);
+                        }
+
+                        matchSuffixLen := computeFullMatchSuffixLengthForRule(strCursor, primitive, stackIRule, rules);
+
+                        if matchSuffixLen > 0
+                        {
+                            suffixLen += matchSuffixLen;
+                            strCursor = strCursor[ : len(strCursor) - matchSuffixLen];
+                        }
+                        else
+                        {
+                            return 0;
+                        }
+                    }
+
+                    case: assert(false);
+                }
+            }
+            
+            iRuleLoop := sequence[iPrimitiveLoop].(int);
+
+            foundInStack := false;
+
+            for iRuleInStack in stackIRule
+            {
+                if iRuleInStack == iRuleLoop
+                {
+                    foundInStack = true;
+                    break;
+                }
+            }
+            assert(foundInStack);
+
+            inflateLen := computeFullMatchPrefixLengthForRule(strCursor, iRuleLoop, stackIRule, rules);
+
+            if prefixLen + inflateLen + suffixLen == len(str)
+            {
+                return len(str);
+            }
+            else
+            {
+                assert(prefixLen + inflateLen + suffixLen < len(str));
+
+                // Inflate starts at the beginning of the region needing inflation and works forwards. If we don't have
+                //  a complete match, the inflated match still contributes to our resulting prefix length
+                
+                return prefixLen + inflateLen;
+            }
+        }
+    }
+
+    computeFullMatchSuffixLengthForRule :: proc(
+        str: string,
+        iRule: int,
+        iRuleParents: ^[dynamic]int, // Note - Should not include iRule
+        rules: []Rule)
+        -> int
+    {
+        if len(str) == 0
+        {
+            return 0;
+        }
+        
+        assert(iRule >= 0);
+        assert(iRule < len(rules));
+
+        rule := rules[iRule];
+        append(iRuleParents, iRule);
+        
+        result := 0;
+        for iSequence := len(rule) - 1; iSequence >= 0; iSequence -= 1
+        {
+            sequence := rule[iSequence];
+            
+            suffixLen := computeFullMatchSuffixLengthForRuleSequence(str, iRuleParents, sequence, rules);
+            result = max(result, suffixLen);
+            
+            if result == len(str)
+            {
+                break;
+            }
+        }
+
+        pop(iRuleParents);
+
+        return result;
+
+        // ---Procedures---
+        
+        computeFullMatchSuffixLengthForRuleSequence :: proc(
+            str: string,
+            stackIRule: ^[dynamic]int, // Note - Top of stack is the rule we are computing prefix length for
+            sequence: RuleSequence,    // Note - This should correspond to one of the sequences in the rule on top of the stack
+            rules: []Rule)
+            -> int
+        {
+            strCursor := str;
+
+            // @HACK Only works with 0 or 1 self references per sequence. 
+            // The idea is to work backwards until hitting a self reference. Then work forwards
+            //  from the front. Then, you know how much the self-reference needs to "inflate" to
+            
+            suffixLen := 0;
+            iPrimitiveLoop := -1;
+
+            // Work backwards
+
+            LBackward:
+            for iPrimitive := len(sequence) - 1; iPrimitive >= 0; iPrimitive -= 1
+            {
+                primitive := sequence[iPrimitive];
+
+                switch primitive in primitive
+                {
+                    case rune:
+                    {
+                        if len(strCursor) > 0 && (strCursor[len(strCursor) - 1] == auto_cast primitive)
+                        {
+                            suffixLen += 1;
+                            strCursor = strCursor[ : len(strCursor) - 1];
+                        }
+                        else
+                        {
+                            return 0;
+                        }
+                    }
+
+                    case int:
+                    {
+                        for iRuleFromStack in stackIRule
+                        {
+                            if primitive == iRuleFromStack
+                            {
+                                iPrimitiveLoop = iPrimitive;
+                                break LBackward;
+                            }
+                        }
+
+                        matchSuffixLen := computeFullMatchSuffixLengthForRule(strCursor, primitive, stackIRule, rules);
+
+                        if matchSuffixLen > 0
+                        {
+                            suffixLen += matchSuffixLen;
+                            strCursor = strCursor[ : len(strCursor) - matchSuffixLen];
+                        }
+                        else
+                        {
+                            return 0;
+                        }
+                    }
+
+                    case: assert(false);
+                }
+            }
+            
+            if iPrimitiveLoop == -1
+            {
+                // We didn't stop at a self reference
+
+                return suffixLen;
+            }
+
+            // We stopped at a self-reference, so work forwards
+            // TODO - Need to work forwards starting from the most recently evaluated parent rule????
+            //  Something like that???
+
+            prefixLen := 0;
+            
+            for iPrimitive in 0..<iPrimitiveLoop
+            {
+                primitive := sequence[iPrimitive];
+                
+                switch primitive in primitive
+                {
+                    case rune:
+                    {
+                        if len(strCursor) > 0 && (strCursor[0] == auto_cast primitive)
+                        {
+                            prefixLen += 1;
+                            strCursor = strCursor[1 : ];
+                        }
+                        else
+                        {
+                            return 0;
+                        }
+                    }
+
+                    case int:
+                    {
+                        for iRuleFromStack in stackIRule
+                        {
+                            // If this triggers, it means there were multiple rule loops in a sequence, which we don't support!
+                            assert(primitive != iRuleFromStack);
+                        }
+                        
+                        matchPrefixLen := computeFullMatchPrefixLengthForRule(strCursor, primitive, stackIRule, rules);
+
+                        if matchPrefixLen > 0
+                        {
+                            prefixLen += matchPrefixLen;
+                            strCursor = strCursor[matchPrefixLen : ];
+                        }
+                        else
+                        {
+                            return 0;
+                        }
+                    }
+
+                    case: assert(false);
+                }
+            }
+            
+            iRuleLoop := sequence[iPrimitiveLoop].(int);
+            
+            foundInStack := false;
+
+            for iRuleInStack in stackIRule
+            {
+                if iRuleInStack == iRuleLoop
+                {
+                    foundInStack = true;
+                    break;
+                }
+            }
+            assert(foundInStack);
+
+            inflateLen := computeFullMatchSuffixLengthForRule(strCursor, iRuleLoop, stackIRule, rules);
+
+            if prefixLen + inflateLen + suffixLen == len(str)
+            {
+                return len(str);
+            }
+            else
+            {
+                assert(prefixLen + inflateLen + suffixLen < len(str));
+
+                // Inflate starts at the end of the region needing inflation and works backwards. If we don't have
+                //  a complete match, the inflated match still contributes to our resulting suffix length
+                
+                return suffixLen + inflateLen;
+            }
         }
     }
 }
