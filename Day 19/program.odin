@@ -304,9 +304,6 @@ main :: proc()
     // Part 2
 
     scanner = &scanner2;
-
-    // TODO - Step through part 2 with debugger to see what is going wrong
-    //  with loopy rules!
     
     rules[8] = [dynamic]RuleSequence{
         { int(42) },
