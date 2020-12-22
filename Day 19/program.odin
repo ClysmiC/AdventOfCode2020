@@ -12,81 +12,182 @@ RulePrimitive :: union
 RuleSequence :: [dynamic]RulePrimitive;
 Rule :: [dynamic]RuleSequence;
 
-// If string is prefixed by something fully matching the rule, returns the length of the prefix
-// Otherwise, returns 0.
 
 isMatch :: inline proc(str: string, iRule: int, rules: []Rule) -> bool
 {
-    prefixLen := computeFullMatchPrefixLengthForRule(str, iRule, rules);
-    return prefixLen == len(str);
+    prefixLens := computeFullMatchPrefixLengthsForRule(str, iRule, rules);
 
-    // ---
-    computeFullMatchPrefixLengthForRule :: proc(str: string, iRule: int, rules: []Rule) -> int
+    for length in prefixLens
     {
-        if len(str) == 0
+        if length == len(str)
         {
-            return 0;
+            return true;
         }
-        
+    }
+
+    return false;
+
+    // ---Procedures---
+
+    // Returns either:
+    // - An array with a single 0 value if the string is not prefixed by the rule
+    // - An array of non-0 values which are the lengths of all of the possible prefixes
+    //   that satisfy the rule
+    //
+    // Note - Returning an array of values supports rules that are recursive. We brute force all the possible
+    //  number of times we can recursively expand the rule. The caller will need to check all possible lengths,
+    //  since greedily taking the longest one might cause upcoming rules to run past the end of the string
+    //  when they would otherwise match if we recursed fewer times.
+    computeFullMatchPrefixLengthsForRule :: proc(
+        str: string,
+        iRule: int,
+        rules: []Rule)
+        -> [dynamic]int // @Leak
+    {
         assert(iRule >= 0);
         assert(iRule < len(rules));
-
-        rule := rules[iRule];
         
-        for sequence in rule
-        {
-            if prefixLen := computeFullMatchPrefixLengthForRuleSequence(str, sequence, rules)
-            ;  prefixLen > 0
+        result : [dynamic]int;
+        
+        if len(str) > 0
+        {            
+            rule := rules[iRule];
+            
+            for sequence in rule
             {
-                return prefixLen;
+                prefixLens := computeFullMatchPrefixLengthsForRuleSequence(str, sequence, rules);
+                for length in prefixLens
+                {
+                    if length > 0
+                    {
+                        append(&result, length);
+                    }
+                }
             }
         }
 
-        return 0;
-
-        // ---
-        computeFullMatchPrefixLengthForRuleSequence :: proc(str: string, sequence: RuleSequence, rules: []Rule) -> int
+        if len(result) == 0
         {
-            strCursor := str;
+            append(&result, 0);
+        }
+        
+        return result;
+
+        // ---Procedures---
+
+        computeFullMatchPrefixLengthsForRuleSequence :: proc(
+            str: string,
+            sequence: RuleSequence,
+            rules: []Rule)
+            -> [dynamic]int // @Leak
+        {
+            // NOTE - "strCursors" and "result" arrays are kept in parallel. Removals use unordered_remove for
+            //  efficiency, since the iterations don't rely on any particular order. That said, it does rely
+            //  on identical unordered_removes resulting in identical orderings in the parallel arrays. I'm
+            //  not sure if that is strictly guaranteed by unordered_remove, but with the obvious implementiation
+            //  of that function, it should hold.
             
-            result := 0;
+            strCursors := [dynamic]string { str };
+            defer delete(strCursors);
+            
+            result := [dynamic]int{ 0 };
+            
             for primitive in sequence
             {
+                assert(len(result) == len(strCursors));
+                
                 switch primitive in primitive
                 {
                     case rune:
                     {
-                        if len(strCursor) > 0 && (strCursor[0] == auto_cast primitive)
+                        // Rune matches can't proliferate, so we update or remove inline
+                        
+                        for i := 0; i < len(strCursors); i += 1
                         {
-                            result += 1;
-                            strCursor = strCursor[1 : ];
-                        }
-                        else
-                        {
-                            return 0;
+                            strCursor := &strCursors[i];
+
+                            if len(strCursor) > 0 && (strCursor[0] == auto_cast primitive)
+                            {
+                                result[i] += 1;
+                                strCursor^ = strCursor[1 : ];
+                            }
+                            else
+                            {
+                                unordered_remove(&result, i);
+                                unordered_remove(&strCursors, i);
+                                i -= 1;
+                            }
                         }
                     }
 
                     case int:
                     {
-                        prefixLen := computeFullMatchPrefixLengthForRule(strCursor, primitive, rules);
-
-                        if prefixLen > 0
+                        // When rule matches don't proliferate, we update or remove inline
+                        // When rule matches do proliferate, we remove inline and defer appending the updated values
+                        //  until the end of the loop.
+                        
+                        strCursorsToAppend : [dynamic]string;
+                        lensToAppend : [dynamic]int;
+                        defer
                         {
-                            result += prefixLen;
-                            strCursor = strCursor[prefixLen : ];
+                            delete(strCursorsToAppend);
+                            delete(lensToAppend);
                         }
-                        else
+                        
+                        for i := 0; i < len(strCursors); i += 1
                         {
-                            return 0;
+                            strCursor := &strCursors[i];
+                            
+                            prefixLens := computeFullMatchPrefixLengthsForRule(strCursor^, primitive, rules);
+
+                            assert(len(prefixLens) > 0);
+                            if len(prefixLens) == 1
+                            {
+                                prefixLen := prefixLens[0];
+                                if prefixLen == 0
+                                {
+                                    unordered_remove(&result, i);
+                                    unordered_remove(&strCursors, i);
+                                    i -= 1;
+                                }
+                                else
+                                {
+                                    result[i] += prefixLen;
+                                    strCursor^ = strCursor[prefixLen : ];
+                                }
+                            }
+                            else
+                            {
+                                priorLen := result[i];
+                                
+                                for length in prefixLens
+                                {
+                                    assert(length > 0);
+
+                                    append(&strCursorsToAppend, strCursor[length : ]);
+                                    append(&lensToAppend, priorLen + length);
+                                }
+                                
+                                unordered_remove(&result, i);
+                                unordered_remove(&strCursors, i);
+                                i -= 1;
+                            }
+                        }
+
+                        // HMM - No built-in "append all" function?
+                        
+                        for length in lensToAppend
+                        {
+                            append(&result, length);
+                        }
+
+                        for strCursor in strCursorsToAppend
+                        {
+                            append(&strCursors, strCursor);
                         }
                     }
 
-                    case:
-                    {
-                        assert(false);
-                        return 0;
-                    }
+                    case: assert(false);
                 }
             }
 
