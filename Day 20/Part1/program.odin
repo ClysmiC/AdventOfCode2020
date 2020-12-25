@@ -1,8 +1,14 @@
+// Author's note
+// This code is pretty confusing an inconsistent. I wouldn't recommend trying to understand how it works. I made a few mistakes
+//  regarding winding directions and orientations when initially implementing. I cleaned it mostly up and started expressing things
+//  in terms of local space and world space, but there is still a lot of places where I handle flips/turns in a pretty ad-hoc way. I
+//  have a pretty good idea of where it all went wrong, but I'm kind of sick of day 20 so I'm not going to spend time fixing it!
+
 package main
 
 import "core:fmt"
 import scan "core:text/scanner"
-import "core:reflect"
+import "core:os"
 
 TILE_DIM :: 10;
 
@@ -64,24 +70,38 @@ Orientation :: enum
     BeginFlip = Flip1Rotate0
 }
 
-buildOrientation :: proc(isFlipped: bool, cntRotationCw: int, startingOrientation := Orientation.Flip0Rotate0) -> Orientation
+buildOrientation :: proc(isFlipped_: bool, cntRotation: int, startingOrientation := Orientation.Flip0Rotate0) -> Orientation
 {
-    if (cntRotationCw < 0 || cntRotationCw > 3)
+    if (cntRotation < 0 || cntRotation > 3)
     {
         assert(false);
         return .None;
     }
 
+    // @Hack - This function is totally whack and it is very unclear whether "isFlipped" and cntRotation are local space, world
+    //  space, etc. I am pretty sick of day 20 though so I'm not going to clean it up.
+    
     result := startingOrientation;
-    if isFlipped
+    if isFlipped_
     {
         result = flipOrientation(result);
     }
 
-    for _ in 1..cntRotationCw
+    if isFlipped(startingOrientation)
     {
-        result = rotateOrientationCw(result);
+        for _ in 1..cntRotation
+        {
+            result = rotateOrientationCcw(result);
+        }
     }
+    else
+    {
+        for _ in 1..cntRotation
+        {
+            result = rotateOrientationCw(result);
+        }
+    }
+          
 
     return result;
 }
@@ -143,6 +163,24 @@ rotateOrientationCw :: proc(orientation: Orientation) -> Orientation
         
         case .Flip0Rotate3: fallthrough;
         case .Flip1Rotate3: return orientation - auto_cast 3;
+
+        case .None: fallthrough;
+        case: assert(false); return .None;
+    }
+
+    return .None; // Needed to satisfy compiler despite having a default case??
+}
+
+rotateOrientationCcw :: proc(orientation: Orientation) -> Orientation
+{
+    // https://github.com/odin-lang/Odin/issues/814
+    #partial switch orientation
+    {
+        case .Flip0Rotate1 .. .Flip0Rotate3: fallthrough;
+        case .Flip1Rotate1 .. .Flip1Rotate3: return orientation - auto_cast 1;
+        
+        case .Flip0Rotate0: fallthrough;
+        case .Flip1Rotate0: return orientation + auto_cast 3;
 
         case .None: fallthrough;
         case: assert(false); return .None;
@@ -349,7 +387,7 @@ TileAndBorderMatch :: struct
 // All possible ways that a movable tile can match against a locked tile
 AllBorderMatches :: [32]BorderMatch;
 
-doBordersMatch :: proc(
+testBorders :: proc(
     border0: ^Border,
     border1: ^Border,
     isBorder1Flipped: bool)
@@ -397,8 +435,8 @@ findMatchingBorders :: proc(
     int) // Number of matches
 {
     assert(tileLocked != tileCandidate);
-    /* assert(isLocked(tileLocked)); */
-    /* assert(!isLocked(tileCandidate)); */
+    assert(isLocked(tileLocked));
+    assert(!isLocked(tileCandidate));
     
     result : AllBorderMatches;
     cntResult := 0;
@@ -412,61 +450,31 @@ findMatchingBorders :: proc(
 
         lockedBorder := getBorderCw(tileLocked, sideLocked);
         
-        if tileCandidate.orientation == .None
+        for sideCandidate in Side.None + auto_cast 1 ..< Side(len(Side))
         {
-            // Candidate tile hasn't been locked to an orientation. We are free to try to match any
-            //  side to the locked tile.
+            assert(tileCandidate.neighborsLocked[sideCandidate] == nil);
             
-            for sideCandidate in Side.None + auto_cast 1 ..< Side(len(Side))
-            {
-                if tileCandidate.neighborsLocked[sideCandidate] != nil
-                {
-                    continue;
-                }
-                
-                candidateBorder := getBorderCw(tileCandidate, sideCandidate);
+            candidateBorder := getBorderCw(tileCandidate, sideCandidate);
 
-                // Unflipped
-                if doBordersMatch(&lockedBorder, &candidateBorder, false)
-                {
-                    result[cntResult] = BorderMatch {
-                        sideLocked = sideLocked,
-                        sideMovable = sideCandidate,
-                        isMovableFlipped = false,
-                    };
-                    
-                    cntResult += 1;
-                }
-
-                // Flipped
-                if doBordersMatch(&lockedBorder, &candidateBorder, true)
-                {
-                    result[cntResult] = BorderMatch {
-                        sideLocked = sideLocked,
-                        sideMovable = sideCandidate,
-                        isMovableFlipped = true,
-                    };
-                    
-                    cntResult += 1;
-                }
-            }
-        }
-        else
-        {
-            // Movable tile already has a locked orientation. We are only free to move it around, but can't re-orient it.
-
-            sideWorldFixed := sideWorldFromLocal(sideLocked, tileLocked.orientation);
-            sideWorldMatch := oppositeSide(sideWorldFixed);
-            sideLocalCandidate := sideLocalFromWorld(sideWorldMatch, tileCandidate.orientation);
-
-            candidateBorder := getBorderCw(tileCandidate, sideLocalCandidate);
-
-            if doBordersMatch(&lockedBorder, &candidateBorder, isFlipped(tileCandidate.orientation))
+            // Unflipped
+            if testBorders(&lockedBorder, &candidateBorder, false)
             {
                 result[cntResult] = BorderMatch {
                     sideLocked = sideLocked,
-                    sideMovable = sideLocalCandidate,
-                    isMovableFlipped = isFlipped(tileCandidate.orientation),
+                    sideMovable = sideCandidate,
+                    isMovableFlipped = false,
+                };
+                
+                cntResult += 1;
+            }
+
+            // Flipped
+            if testBorders(&lockedBorder, &candidateBorder, true)
+            {
+                result[cntResult] = BorderMatch {
+                    sideLocked = sideLocked,
+                    sideMovable = sideCandidate,
+                    isMovableFlipped = true,
                 };
                 
                 cntResult += 1;
@@ -521,6 +529,7 @@ lockTile :: proc(grid: ^TileGrid, tile: ^Tile, orientation: Orientation, x: int,
         }
     }
 
+    // @Cleanup
     if grid.width == 0
     {
         grid.topLeft = xy;
@@ -560,16 +569,17 @@ lockTile :: proc(grid: ^TileGrid, tile: ^Tile, orientation: Orientation, x: int,
     }
 }
 
-lockMatchedTiles :: proc(grid: ^TileGrid, match: TileAndBorderMatch)
+lockMatch :: proc(grid: ^TileGrid, match: TileAndBorderMatch)
 {
     tileLocked := match.tileLocked;
     tileMatched := match.tileMatched;
 
     assert(isLocked(tileLocked));
+    assert(!isLocked(tileMatched));
     assert(tileLocked.neighborsLocked[match.match.sideLocked] == nil);
     assert(tileMatched.neighborsLocked[match.match.sideMovable] == nil);
 
-    orientationMatchedTarget : Orientation;
+    orientationMatchedTarget: Orientation;
     {
         sideMatchedMaybeFlipped := match.match.sideMovable;
         if match.match.isMovableFlipped
@@ -580,33 +590,23 @@ lockMatchedTiles :: proc(grid: ^TileGrid, match: TileAndBorderMatch)
         cntRotationCw := rotationsCwRequiredToAlignBorders(match.match.sideLocked, sideMatchedMaybeFlipped);
         orientationMatchedTarget = buildOrientation(match.match.isMovableFlipped, cntRotationCw, tileLocked.orientation);
     }
+    
+    sideWorldLocked := sideWorldFromLocal(match.match.sideLocked, tileLocked.orientation);
 
-    assert(!isLocked(tileMatched) || tileMatched.orientation == orientationMatchedTarget);
+    x := tileLocked.x;
+    y := tileLocked.y;
 
-    if !isLocked(tileMatched)
+    #partial switch sideWorldLocked
     {
-        sideWorldLocked := sideWorldFromLocal(match.match.sideLocked, tileLocked.orientation);
+        case .Top: y -= 1;
+        case .Bottom: y += 1;
+        case .Right: x += 1;
+        case .Left: x -= 1;
 
-        x := tileLocked.x;
-        y := tileLocked.y;
-
-        #partial switch sideWorldLocked
-        {
-            case .Top: y -= 1;
-            case .Bottom: y += 1;
-            case .Right: x += 1;
-            case .Left: x -= 1;
-
-            case: assert(false);
-        }
-
-        lockTile(grid, tileMatched, orientationMatchedTarget, x, y);
+        case: assert(false);
     }
-    else
-    {
-        tileLocked.neighborsLocked[match.match.sideLocked] = tileMatched;
-        tileMatched.neighborsLocked[match.match.sideMovable] = tileLocked;
-    }
+
+    lockTile(grid, tileMatched, orientationMatchedTarget, x, y);
 }
 
 main :: proc()
@@ -686,7 +686,7 @@ main :: proc()
                 {
                     continue;
                 }
-
+                
                 matches, cntMatch := findMatchingBorders(tileLocked, tileCandidate);
 
                 for iMatch in 0..<cntMatch
@@ -717,7 +717,7 @@ main :: proc()
                         append(&lockedTiles, match_.tileMatched);
                     }
                     
-                    lockMatchedTiles(&grid, match_);
+                    lockMatch(&grid, match_);
                     anyMatchLocked = true;
                 }
             }
@@ -731,47 +731,52 @@ main :: proc()
     topRightXy := XY{ topLeftXy.x + grid.width - 1, topLeftXy.y };
     bottomRightXy := XY{ topLeftXy.x + grid.width - 1, topLeftXy.y + grid.height - 1 };
     bottomLeftXy := XY{ topLeftXy.x, topLeftXy.y + grid.height - 1 };
+
+    cornerTl := grid.lookup[topLeftXy];
+    cornerTr := grid.lookup[topRightXy];
+    cornerBl := grid.lookup[bottomLeftXy];
+    cornerBr := grid.lookup[bottomRightXy];
+
+    // NOTE - I chose a pretty awful way to store the grid tile data in part 1. I am making a clean break
+    //  for part 2 to make life a little bit easier on me my treating part 2 as a separate problem without
+    //  all of the gross technical debt from part 1.
+    
+    fmt.println("Part 1:", cornerTl.id * cornerTr.id * cornerBl.id * cornerBr.id);
+    fmt.println("Writing grid to ../Part2/input.txt - Run program2.odin to solve part 2.");
+
+    file, error := os.open("../Part2/input.txt", os.O_WRONLY | os.O_CREATE);
+    assert(error == os.ERROR_NONE);
+    defer os.close(file);
+    
+    writeGridWithoutBordersToFile(&grid, file);
 }
 
-printGrid :: proc(grid: ^TileGrid)
+writeGridWithoutBordersToFile :: proc(grid: ^TileGrid, file: os.Handle)
 {
-    for iRowTile := grid.height - 1; iRowTile >= 0; iRowTile -= 1
+    for iRowTile in 0..<grid.height
     {
-        for iRowPx := TILE_DIM - 1; iRowPx >= 0; iRowPx -= 1
+        for iRowPx in 1 ..< (TILE_DIM - 1)
         {
             for iColTile in 0..<grid.width
             {
                 tile := grid.lookup[ XY{ grid.topLeft.x + iColTile, grid.topLeft.y + iRowTile } ];
-
-                if tile != nil
-                {
-                    printRowWorld(tile, iRowPx);
-                }
-                else
-                {
-                    for _ in 1..TILE_DIM
-                    {
-                        fmt.print(" ");
-                    }
-                }
-
-                fmt.print(" ");
+                assert(tile != nil);
+                writeTileRowWithoutBordersToFile(tile, iRowPx, file);
             }
-            
-            fmt.println();
+
+            os.write_byte(file, '\n');
         }
-        
-        fmt.println();
     }
+
+    os.write_byte(file, '\n');
 }
 
-printRowWorld :: proc(tile: ^Tile, iRow: int)
+writeTileRowWithoutBordersToFile :: proc(tile: ^Tile, iRowWorld: int, file: os.Handle)
 {
     cntRotation := cntRotationCw(tile.orientation);
-
     // Note - rotate CCW to undo orientation
 
-    iLocal := iRow;
+    iLocal := iRowWorld;
     isRowLocal := true;
     
     for _ in 1..cntRotation
@@ -791,16 +796,16 @@ printRowWorld :: proc(tile: ^Tile, iRow: int)
         
         if isLeftToRight
         {
-            for iColPx in 0..<TILE_DIM
+            for iColPx in 1 ..< TILE_DIM - 1
             {
-                printPixel(tile.pixels[iLocal][iColPx]);
+                printPixel(tile.pixels[iLocal][iColPx], file);
             }
         }
         else
         {
-            for iColPx := TILE_DIM - 1; iColPx >= 0; iColPx -= 1
+            for iColPx := TILE_DIM - 2; iColPx >= 1; iColPx -= 1
             {
-                printPixel(tile.pixels[iLocal][iColPx]);
+                printPixel(tile.pixels[iLocal][iColPx], file);
             }
         }
     }
@@ -817,16 +822,16 @@ printRowWorld :: proc(tile: ^Tile, iRow: int)
 
         if isTopToBottom
         {
-            for iRowPx in 0..<TILE_DIM
+            for iRowPx in 1 ..< TILE_DIM - 1
             {
-                printPixel(tile.pixels[iRowPx][iLocal]);
+                printPixel(tile.pixels[iRowPx][iLocal], file);
             }
         }
         else
         {
-            for iRowPx := TILE_DIM - 1; iRowPx >= 0; iRowPx -= 1
+            for iRowPx := TILE_DIM - 2; iRowPx >= 1; iRowPx -= 1
             {
-                printPixel(tile.pixels[iRowPx][iLocal]);
+                printPixel(tile.pixels[iRowPx][iLocal], file);
             }
         }
     }
@@ -844,15 +849,16 @@ printRowWorld :: proc(tile: ^Tile, iRow: int)
         }
     }
 
-    printPixel :: proc(b: bool)
+    printPixel :: proc(b: bool, file: os.Handle)
     {
         if b
         {
-            fmt.print("#");
+            os.write_byte(file, '#');
         }
         else
         {
-            fmt.print(".");
+            os.write_byte(file, '.');
         }
     }
 }
+
